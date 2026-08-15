@@ -236,6 +236,154 @@ func TestNormalizeUserReplyMarkers(t *testing.T) {
 	}
 }
 
+func TestHandleIncomingAdminCommandRoutesToAdminAgent(t *testing.T) {
+	workspace := t.TempDir()
+	scriptPath := filepath.Join(workspace, "agent_manager_prompt_capture.py")
+	promptPath := filepath.Join(workspace, "prompt.log")
+	argsPath := filepath.Join(workspace, "args.log")
+
+	script := `import pathlib
+import sys
+
+base = pathlib.Path(sys.argv[0]).parent
+(base / "args.log").write_text(" ".join(sys.argv[1:]), encoding="utf-8")
+(base / "prompt.log").write_text(sys.stdin.read(), encoding="utf-8")
+
+if len(sys.argv) >= 2 and sys.argv[1] == "assign":
+    print("assign ok")
+    sys.exit(0)
+
+print("unexpected command", file=sys.stderr)
+sys.exit(1)
+`
+
+	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+
+	manager := NewManager(&config.AgentsConfig{
+		OhMyCode: &config.OhMyCodeConfig{
+			Enabled:            true,
+			Workspace:          workspace,
+			AgentManagerScript: scriptPath,
+			DefaultAgent:       "main",
+			AllowedAgents:      []string{"main", "admin"},
+		},
+	})
+
+	out, err := manager.HandleIncoming(context.Background(), &protocol.Message{
+		Kind:   protocol.MessageKindChannel,
+		Action: protocol.ActionCreate,
+		Data: map[string]interface{}{
+			"channel":    "imessage",
+			"text":       "/admin recover main session",
+			"chat_id":    "+15551234567",
+			"user_id":    "+15551234567",
+			"message_id": int64(42),
+			"timestamp":  "2026-07-03T00:00:00Z",
+		},
+	})
+	if err != nil {
+		t.Fatalf("HandleIncoming: %v", err)
+	}
+	if out != ohMyCodeAssignAckMessage {
+		t.Fatalf("expected %q, got %q", ohMyCodeAssignAckMessage, out)
+	}
+
+	argsRaw, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read args log: %v", err)
+	}
+	if string(argsRaw) != "assign admin" {
+		t.Fatalf("expected assign admin, got %q", string(argsRaw))
+	}
+
+	promptRaw, err := os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("read prompt log: %v", err)
+	}
+	prompt := string(promptRaw)
+	for _, part := range []string{
+		"- channel: imessage",
+		"- chat_id: +15551234567",
+		"- selected_agent: admin",
+		"- message_id: 42",
+		"- timestamp: 2026-07-03T00:00:00Z",
+		"- raw_text: /admin recover main session",
+		"User message:\nrecover main session",
+	} {
+		if !strings.Contains(prompt, part) {
+			t.Fatalf("expected %q in prompt, got %q", part, prompt)
+		}
+	}
+
+	out, err = manager.HandleIncoming(context.Background(), &protocol.Message{
+		Kind:   protocol.MessageKindChannel,
+		Action: protocol.ActionCreate,
+		Data: map[string]interface{}{
+			"channel":  "slack",
+			"text":     "/admin remain literal",
+			"raw_text": "/agent main /admin remain literal",
+			"agent":    "main",
+			"chat_id":  "D123",
+			"user_id":  "U123",
+		},
+	})
+	if err != nil {
+		t.Fatalf("HandleIncoming explicit agent: %v", err)
+	}
+	if out != ohMyCodeAssignAckMessage {
+		t.Fatalf("expected %q, got %q", ohMyCodeAssignAckMessage, out)
+	}
+	argsRaw, err = os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatalf("read explicit-agent args log: %v", err)
+	}
+	if string(argsRaw) != "assign main" {
+		t.Fatalf("expected explicit agent to remain main, got %q", string(argsRaw))
+	}
+	promptRaw, err = os.ReadFile(promptPath)
+	if err != nil {
+		t.Fatalf("read explicit-agent prompt log: %v", err)
+	}
+	prompt = string(promptRaw)
+	for _, part := range []string{
+		"- selected_agent: main",
+		"- raw_text: /agent main /admin remain literal",
+		"User message:\n/admin remain literal",
+	} {
+		if !strings.Contains(prompt, part) {
+			t.Fatalf("expected %q in explicit-agent prompt, got %q", part, prompt)
+		}
+	}
+}
+
+func TestHandleIncomingAdminCommandEmptyTextReturnsUsage(t *testing.T) {
+	manager := NewManager(&config.AgentsConfig{
+		OhMyCode: &config.OhMyCodeConfig{
+			Enabled:       true,
+			Workspace:     t.TempDir(),
+			DefaultAgent:  "main",
+			AllowedAgents: []string{"main", "admin"},
+		},
+	})
+
+	out, err := manager.HandleIncoming(context.Background(), &protocol.Message{
+		Kind:   protocol.MessageKindChannel,
+		Action: protocol.ActionCreate,
+		Data: map[string]interface{}{
+			"channel": "imessage",
+			"text":    "/admin",
+		},
+	})
+	if err != nil {
+		t.Fatalf("HandleIncoming: %v", err)
+	}
+	if !strings.Contains(out, "usage: /admin <text>") {
+		t.Fatalf("expected admin usage reply, got %q", out)
+	}
+}
+
 func TestAssignOhMyCodeReturnsAckWithoutMonitor(t *testing.T) {
 	workspace := t.TempDir()
 	scriptPath := filepath.Join(workspace, "agent_manager_stub.py")

@@ -748,7 +748,7 @@ func (b *TelegramBot) handleCommand(msg *TelegramMessage) (bool, error) {
 		command = command[:idx]
 	}
 	command = strings.ToLower(command)
-	if command == "/agent" || command == "/to" || isRuntimeToolCommand(command) {
+	if command == "/agent" || command == "/to" || command == "/admin" || isRuntimeToolCommand(command) {
 		return false, nil
 	}
 
@@ -998,6 +998,7 @@ func (b *TelegramBot) helpText() string {
 	sb.WriteString("Agent routing:\n")
 	sb.WriteString("  /agent <name> <task...>\n")
 	sb.WriteString("  /to <name> <task...> (alias of /agent)\n")
+	sb.WriteString("  /admin <text...> - route to admin agent\n")
 	sb.WriteString("  /agents - see available agents\n")
 	sb.WriteString("  Note: if an allowlist is configured, only allowlisted agents can be used.\n")
 	if b.defaultAgent != "" {
@@ -1114,13 +1115,14 @@ func formatUserList(users []int64) string {
 
 // TelegramMessage represents a Telegram message.
 type TelegramMessage struct {
-	MessageID int64               `json:"message_id"`
-	From      *TelegramUser       `json:"from"`
-	Chat      *TelegramChat       `json:"chat"`
-	Date      int64               `json:"date"`
-	Text      string              `json:"text"`
-	Photo     []TelegramPhotoSize `json:"photo,omitempty"`
-	Document  *TelegramDocument   `json:"document,omitempty"`
+	MessageID       int64               `json:"message_id"`
+	MessageThreadID int64               `json:"message_thread_id,omitempty"`
+	From            *TelegramUser       `json:"from"`
+	Chat            *TelegramChat       `json:"chat"`
+	Date            int64               `json:"date"`
+	Text            string              `json:"text"`
+	Photo           []TelegramPhotoSize `json:"photo,omitempty"`
+	Document        *TelegramDocument   `json:"document,omitempty"`
 }
 
 // TelegramPhotoSize represents a Telegram photo size object.
@@ -1316,14 +1318,24 @@ func telegramAttachmentType(mimeType, fileName string) string {
 }
 
 func (b *TelegramBot) convertToProtocolMessage(msg *TelegramMessage, text, agent string, attachments []protocol.Attachment) *protocol.Message {
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	if msg.Date > 0 {
+		timestamp = time.Unix(msg.Date, 0).UTC().Format(time.RFC3339)
+	}
 	data := map[string]interface{}{
-		"channel":  "telegram",
-		"text":     text,
-		"agent":    agent,
-		"chat_id":  msg.Chat.ID,
-		"chatType": msg.Chat.Type,
-		"user_id":  msg.From.ID,
-		"username": msg.From.UserName,
+		"channel":    "telegram",
+		"text":       text,
+		"raw_text":   msg.Text,
+		"agent":      agent,
+		"chat_id":    msg.Chat.ID,
+		"chatType":   msg.Chat.Type,
+		"user_id":    msg.From.ID,
+		"username":   msg.From.UserName,
+		"message_id": msg.MessageID,
+		"timestamp":  timestamp,
+	}
+	if msg.MessageThreadID > 0 {
+		data["thread_id"] = msg.MessageThreadID
 	}
 	if len(attachments) > 0 {
 		data["attachments"] = attachments

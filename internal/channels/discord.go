@@ -229,10 +229,7 @@ func (b *DiscordBot) handleMessageEvent(ctx context.Context, msg *discordInbound
 
 	if isIncompleteDiscordAgentCommand(msg.text) {
 		command := agentCommandName(msg.text)
-		if command == "" {
-			command = "/agent"
-		}
-		_ = b.reply(ctx, msg, fmt.Sprintf("❌ usage: %s <name> <task...>\nTip: use /agents to see allowed agents.", command))
+		_ = b.reply(ctx, msg, fmt.Sprintf("❌ %s\nTip: use /agents to see allowed agents.", agentCommandUsage(command)))
 		return
 	}
 
@@ -319,7 +316,7 @@ func (b *DiscordBot) handleCommand(ctx context.Context, msg *discordInboundMessa
 	if idx := strings.IndexByte(command, '@'); idx != -1 {
 		command = command[:idx]
 	}
-	if command == "/agent" || command == "/to" {
+	if command == "/agent" || command == "/to" || command == "/admin" {
 		return false, nil
 	}
 	if command == "/tool" || strings.HasPrefix(command, "/tool:") {
@@ -477,6 +474,7 @@ func (b *DiscordBot) helpText() string {
 		"Agent routing:",
 		"  /agent <name> <task...>",
 		"  /to <name> <task...> (alias of /agent)",
+		"  /admin <text...> - route to admin agent",
 		"  /agents - see available agents",
 		"  Note: if an allowlist is configured, only allowlisted agents can be used.",
 		"",
@@ -532,22 +530,7 @@ func isDiscordSafeCommand(text string) bool {
 }
 
 func isIncompleteDiscordAgentCommand(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" || (!strings.HasPrefix(trimmed, "/agent") && !strings.HasPrefix(trimmed, "/to")) {
-		return false
-	}
-	fields := strings.Fields(trimmed)
-	if len(fields) == 0 {
-		return false
-	}
-	command := fields[0]
-	if idx := strings.IndexByte(command, '@'); idx != -1 {
-		command = command[:idx]
-	}
-	if command != "/agent" && command != "/to" {
-		return false
-	}
-	return len(fields) < 3
+	return isIncompleteAgentCommand(text)
 }
 
 func (b *DiscordBot) reply(ctx context.Context, msg *discordInboundMessage, text string) error {
@@ -581,16 +564,24 @@ func (b *DiscordBot) sendText(ctx context.Context, channelID, text string) error
 }
 
 func (b *DiscordBot) toProtocolMessage(msg *discordInboundMessage, text, agent string) *protocol.Message {
+	timestamp := msg.timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
 	return &protocol.Message{
 		Kind:   protocol.MessageKindChannel,
 		Action: protocol.ActionCreate,
 		Data: map[string]interface{}{
 			"channel":    "discord",
 			"text":       text,
+			"raw_text":   msg.text,
 			"agent":      agent,
 			"user_id":    msg.userID,
+			"chat_id":    msg.channelID,
 			"channel_id": msg.channelID,
+			"message_id": msg.messageID,
 			"chatType":   msg.channelType,
+			"timestamp":  timestamp.UTC().Format(time.RFC3339),
 		},
 	}
 }
@@ -600,6 +591,8 @@ type discordInboundMessage struct {
 	userID      string
 	channelID   string
 	channelType string
+	messageID   string
+	timestamp   time.Time
 }
 
 func discordMessageFromEvent(event *discordgo.MessageCreate) *discordInboundMessage {
@@ -621,6 +614,8 @@ func discordMessageFromEvent(event *discordgo.MessageCreate) *discordInboundMess
 		userID:      event.Author.ID,
 		channelID:   event.ChannelID,
 		channelType: channelType,
+		messageID:   event.ID,
+		timestamp:   event.Timestamp,
 	}
 }
 

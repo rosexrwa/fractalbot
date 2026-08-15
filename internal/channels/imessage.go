@@ -476,15 +476,20 @@ func (b *IMessageBot) handleSingleInbound(ctx context.Context, inbound IMessageI
 }
 
 func (b *IMessageBot) toProtocolMessage(inbound IMessageInbound) *protocol.Message {
+	timestamp := inbound.Timestamp
+	if timestamp.IsZero() {
+		timestamp = time.Now().UTC()
+	}
 	data := map[string]interface{}{
 		"channel":     "imessage",
 		"text":        inbound.Text,
+		"raw_text":    inbound.Text,
 		"agent":       "",
 		"chat_id":     inbound.Sender,
 		"user_id":     inbound.Sender,
 		"sender":      inbound.Sender,
 		"message_id":  inbound.MessageID,
-		"timestamp":   inbound.Timestamp.UTC().Format(time.RFC3339),
+		"timestamp":   timestamp.UTC().Format(time.RFC3339),
 		"chatType":    "dm",
 		"raw_message": inbound.RawTimestamp,
 	}

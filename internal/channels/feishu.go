@@ -434,10 +434,14 @@ func (b *FeishuBot) handleMessageEvent(ctx context.Context, event *larkim.P2Mess
 
 	if isIncompleteFeishuAgentCommand(msg.text) {
 		command := agentCommandName(msg.text)
-		if command == "" {
-			command = "/agent"
+		usage := agentCommandUsage(command)
+		if command != "/admin" {
+			if command == "" {
+				command = "/agent"
+			}
+			usage = fmt.Sprintf("usage: %s <name> <task>", command)
 		}
-		_ = b.reply(ctx, msg, fmt.Sprintf("❌ usage: %s <name> <task>\nTip: use /agents to see allowed agents.", command))
+		_ = b.reply(ctx, msg, fmt.Sprintf("❌ %s\nTip: use /agents to see allowed agents.", usage))
 		return nil
 	}
 
@@ -505,7 +509,7 @@ func (b *FeishuBot) handleCommand(ctx context.Context, msg *feishuInboundMessage
 	if idx := strings.IndexByte(command, '@'); idx != -1 {
 		command = command[:idx]
 	}
-	if command == "/agent" || command == "/to" {
+	if command == "/agent" || command == "/to" || command == "/admin" {
 		return false, nil
 	}
 
@@ -553,6 +557,7 @@ func (b *FeishuBot) helpText() string {
 		"Agent routing:",
 		"  /agent <name> <task...>",
 		"  /to <name> <task...> (alias of /agent)",
+		"  /admin <text...> - route to admin agent",
 		"  /agents - see available agents",
 		"  Note: if an allowlist is configured, only allowlisted agents can be used.",
 	}
@@ -597,18 +602,26 @@ func (b *FeishuBot) reply(ctx context.Context, msg *feishuInboundMessage, text s
 }
 
 func (b *FeishuBot) toProtocolMessage(msg *feishuInboundMessage, text, agent string) *protocol.Message {
+	timestamp := strings.TrimSpace(msg.timestamp)
+	if timestamp == "" {
+		timestamp = time.Now().UTC().Format(time.RFC3339)
+	}
 	return &protocol.Message{
 		Kind:   protocol.MessageKindChannel,
 		Action: protocol.ActionCreate,
 		Data: map[string]interface{}{
-			"channel":  "feishu",
-			"text":     text,
-			"agent":    agent,
-			"chat_id":  msg.chatID,
-			"open_id":  msg.openID,
-			"user_id":  msg.userID,
-			"message":  msg.messageID,
-			"chatType": msg.chatType,
+			"channel":    "feishu",
+			"text":       text,
+			"raw_text":   msg.text,
+			"agent":      agent,
+			"chat_id":    msg.chatID,
+			"open_id":    msg.openID,
+			"user_id":    msg.userID,
+			"message":    msg.messageID,
+			"message_id": msg.messageID,
+			"thread_id":  msg.threadID,
+			"chatType":   msg.chatType,
+			"timestamp":  timestamp,
 		},
 	}
 }
@@ -621,6 +634,8 @@ type feishuInboundMessage struct {
 	chatID      string
 	chatType    string
 	messageID   string
+	threadID    string
+	timestamp   string
 	replyIDType string
 	replyID     string
 }
@@ -657,6 +672,8 @@ func parseFeishuInbound(event *larkim.P2MessageReceiveV1) (*feishuInboundMessage
 	chatID := derefString(msg.ChatId)
 	chatType := derefString(msg.ChatType)
 	messageID := derefString(msg.MessageId)
+	threadID := derefString(msg.ThreadId)
+	timestamp := derefString(msg.CreateTime)
 
 	replyIDType := "chat_id"
 	replyID := chatID
@@ -673,6 +690,8 @@ func parseFeishuInbound(event *larkim.P2MessageReceiveV1) (*feishuInboundMessage
 		chatID:      chatID,
 		chatType:    chatType,
 		messageID:   messageID,
+		threadID:    threadID,
+		timestamp:   timestamp,
 		replyIDType: replyIDType,
 		replyID:     replyID,
 	}, nil
@@ -732,22 +751,7 @@ func derefString(value *string) string {
 }
 
 func isIncompleteFeishuAgentCommand(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" || (!strings.HasPrefix(trimmed, "/agent") && !strings.HasPrefix(trimmed, "/to")) {
-		return false
-	}
-	fields := strings.Fields(trimmed)
-	if len(fields) == 0 {
-		return false
-	}
-	command := fields[0]
-	if idx := strings.IndexByte(command, '@'); idx != -1 {
-		command = command[:idx]
-	}
-	if command != "/agent" && command != "/to" {
-		return false
-	}
-	return len(fields) < 3
+	return isIncompleteAgentCommand(text)
 }
 
 func resolveFeishuDomain(domain string) string {

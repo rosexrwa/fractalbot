@@ -45,6 +45,20 @@ func TestParseAgentSelection(t *testing.T) {
 			specified:   true,
 		},
 		{
+			name:        "admin command",
+			input:       "/admin recover main",
+			expectAgent: AdminAgentName,
+			expectTask:  "recover main",
+			specified:   true,
+		},
+		{
+			name:        "admin command with bot",
+			input:       "/admin@bot recover main",
+			expectAgent: AdminAgentName,
+			expectTask:  "recover main",
+			specified:   true,
+		},
+		{
 			name:       "plain text",
 			input:      "hello world",
 			expectTask: "hello world",
@@ -67,6 +81,12 @@ func TestParseAgentSelection(t *testing.T) {
 			input:       "/to@bot coder",
 			expectErr:   true,
 			errContains: "usage: /to <name> <task>",
+		},
+		{
+			name:        "missing admin text",
+			input:       "/admin",
+			expectErr:   true,
+			errContains: "usage: /admin <text>",
 		},
 	}
 

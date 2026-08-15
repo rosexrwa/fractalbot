@@ -137,6 +137,21 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return "", nil
 	}
 
+	agentOverride, _ := data["agent"].(string)
+	if strings.TrimSpace(agentOverride) == "" {
+		if selection, ok, err := channels.ParseAdminSelection(text); ok {
+			if err != nil {
+				return fmt.Sprintf("❌ %v", err), nil
+			}
+			if _, exists := data["raw_text"]; !exists {
+				data["raw_text"] = text
+			}
+			text = strings.TrimSpace(selection.Task)
+			data["text"] = text
+			data["agent"] = selection.Agent
+		}
+	}
+
 	// Apply channel-agnostic body wrapping: short bodies stay inline,
 	// long bodies are written to a file so downstream consumers can
 	// skip a second file-wrap pass.
@@ -507,6 +522,10 @@ func buildOhMyCodeTaskPrompt(userText, selectedAgent string, inboundData map[str
 	username := promptContextValue(inboundData, "username")
 	trustLevel := promptContextValue(inboundData, "trust_level")
 	threadTS := promptContextValue(inboundData, "thread_ts")
+	threadID := promptContextValue(inboundData, "thread_id")
+	messageID := firstContextValue(inboundData, "message_id", "message")
+	rawText := firstContextValue(inboundData, "raw_text", "original_text")
+	timestamp := promptContextValue(inboundData, "timestamp")
 	bodyMode := promptContextValue(inboundData, "body_mode")
 	bodyFile := promptContextValue(inboundData, "body_file")
 
@@ -520,6 +539,18 @@ func buildOhMyCodeTaskPrompt(userText, selectedAgent string, inboundData map[str
 	sb.WriteString(fmt.Sprintf("- selected_agent: %s\n", defaultPromptContextValue(strings.TrimSpace(selectedAgent))))
 	if threadTS != "" {
 		sb.WriteString(fmt.Sprintf("- thread_ts: %s\n", threadTS))
+	}
+	if threadID != "" {
+		sb.WriteString(fmt.Sprintf("- thread_id: %s\n", threadID))
+	}
+	if messageID != "" {
+		sb.WriteString(fmt.Sprintf("- message_id: %s\n", messageID))
+	}
+	if timestamp != "" {
+		sb.WriteString(fmt.Sprintf("- timestamp: %s\n", timestamp))
+	}
+	if rawText != "" {
+		sb.WriteString(fmt.Sprintf("- raw_text: %s\n", rawText))
 	}
 	if bodyMode != "" {
 		sb.WriteString(fmt.Sprintf("- body_mode: %s\n", bodyMode))

@@ -13,6 +13,8 @@ var agentNamePattern = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9_-]*$`)
 var errDefaultAgentMissing = errors.New("default agent is not configured")
 var noAgentsConfiguredMessage = "⚠️ No agents configured.\nSet agents.ohMyCode.defaultAgent or agents.ohMyCode.allowedAgents.\nTry: /agent <name> <task> (or /to <name> <task>)."
 
+const AdminAgentName = "admin"
+
 // AgentSelection describes the resolved target agent and task text.
 type AgentSelection struct {
 	Agent     string
@@ -40,7 +42,8 @@ func NewAgentAllowlist(names []string) AgentAllowlist {
 }
 
 // ParseAgentSelection extracts a target agent and task from chat text.
-// Supported syntax: /agent <name> <task...> or /to <name> <task...>
+// Supported syntax: /agent <name> <task...>, /to <name> <task...>,
+// or /admin <task...> (routes to the reserved admin agent).
 func ParseAgentSelection(text string) (AgentSelection, error) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -52,12 +55,13 @@ func ParseAgentSelection(text string) (AgentSelection, error) {
 		return AgentSelection{Task: ""}, nil
 	}
 
+	if selection, ok, err := ParseAdminSelection(trimmed); ok || err != nil {
+		return selection, err
+	}
+
 	first := fields[0]
 	if strings.HasPrefix(first, "/agent") || strings.HasPrefix(first, "/to") {
-		command := first
-		if idx := strings.IndexByte(command, '@'); idx != -1 {
-			command = command[:idx]
-		}
+		command := normalizedCommandName(first)
 		if command != "/agent" && command != "/to" {
 			return AgentSelection{Task: trimmed}, nil
 		}
@@ -72,6 +76,60 @@ func ParseAgentSelection(text string) (AgentSelection, error) {
 	}
 
 	return AgentSelection{Task: trimmed}, nil
+}
+
+// ParseAdminSelection parses /admin <task...>. It returns ok=false when text
+// is not the admin command, and ok=true with an error for malformed admin usage.
+func ParseAdminSelection(text string) (AgentSelection, bool, error) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return AgentSelection{}, false, nil
+	}
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 {
+		return AgentSelection{}, false, nil
+	}
+	command := normalizedCommandName(fields[0])
+	if command != "/admin" {
+		return AgentSelection{}, false, nil
+	}
+	if len(fields) < 2 {
+		return AgentSelection{}, true, fmt.Errorf("usage: /admin <text>")
+	}
+	return AgentSelection{
+		Agent:     AdminAgentName,
+		Task:      strings.Join(fields[1:], " "),
+		Specified: true,
+	}, true, nil
+}
+
+func normalizedCommandName(command string) string {
+	if idx := strings.IndexByte(command, '@'); idx != -1 {
+		command = command[:idx]
+	}
+	return strings.ToLower(command)
+}
+
+func agentCommandUsage(command string) string {
+	if command == "/admin" {
+		return "usage: /admin <text>"
+	}
+	if command == "" {
+		command = "/agent"
+	}
+	return fmt.Sprintf("usage: %s <name> <task...>", command)
+}
+
+func isIncompleteAgentCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	switch agentCommandName(text) {
+	case "/admin":
+		return len(fields) < 2
+	case "/agent", "/to":
+		return len(fields) < 3
+	default:
+		return false
+	}
 }
 
 // ResolveAgentSelection applies defaults and allowlist validation.
@@ -105,11 +163,8 @@ func agentCommandName(text string) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	command := fields[0]
-	if idx := strings.IndexByte(command, '@'); idx != -1 {
-		command = command[:idx]
-	}
-	if command != "/agent" && command != "/to" {
+	command := normalizedCommandName(fields[0])
+	if command != "/agent" && command != "/to" && command != "/admin" {
 		return ""
 	}
 	return command

@@ -361,6 +361,7 @@ func (b *SlackBot) handleSlashCommandEventWithAck(ctx context.Context, event soc
 	}
 	msg := &slackInboundMessage{
 		text:        text,
+		rawText:     text,
 		userID:      cmd.UserID,
 		channelID:   cmd.ChannelID,
 		channelType: "slash",
@@ -436,10 +437,7 @@ func (b *SlackBot) slashCommandReply(ctx context.Context, msg *slackInboundMessa
 
 	if isIncompleteSlackAgentCommand(msg.text) {
 		command := agentCommandName(msg.text)
-		if command == "" {
-			command = "/agent"
-		}
-		return fmt.Sprintf("❌ usage: %s <name> <task...>\nTip: use /agents to see allowed agents.", command)
+		return fmt.Sprintf("❌ %s\nTip: use /agents to see allowed agents.", agentCommandUsage(command))
 	}
 
 	if handled, replyText, cmdErr := b.commandResponse(ctx, msg); handled {
@@ -525,10 +523,7 @@ func (b *SlackBot) handleMessageEvent(ctx context.Context, msg *slackInboundMess
 
 	if isIncompleteSlackAgentCommand(msg.text) {
 		command := agentCommandName(msg.text)
-		if command == "" {
-			command = "/agent"
-		}
-		_ = b.reply(ctx, msg, fmt.Sprintf("❌ usage: %s <name> <task...>\nTip: use /agents to see allowed agents.", command))
+		_ = b.reply(ctx, msg, fmt.Sprintf("❌ %s\nTip: use /agents to see allowed agents.", agentCommandUsage(command)))
 		return
 	}
 
@@ -625,7 +620,7 @@ func (b *SlackBot) commandResponse(ctx context.Context, msg *slackInboundMessage
 	if idx := strings.IndexByte(command, '@'); idx != -1 {
 		command = command[:idx]
 	}
-	if command == "/agent" || command == "/to" {
+	if command == "/agent" || command == "/to" || command == "/admin" {
 		return false, "", nil
 	}
 	if command == "/tool" || strings.HasPrefix(command, "/tool:") {
@@ -788,6 +783,7 @@ func (b *SlackBot) helpText() string {
 		"Agent routing:",
 		"  /agent <name> <task...>",
 		"  /to <name> <task...> (alias of /agent)",
+		"  /admin <text...> - route to admin agent",
 		"  /agents - see available agents",
 		"  Note: if an allowlist is configured, only allowlisted agents can be used.",
 		"",
@@ -843,22 +839,7 @@ func isSlackSafeCommand(text string) bool {
 }
 
 func isIncompleteSlackAgentCommand(text string) bool {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" || (!strings.HasPrefix(trimmed, "/agent") && !strings.HasPrefix(trimmed, "/to")) {
-		return false
-	}
-	fields := strings.Fields(trimmed)
-	if len(fields) == 0 {
-		return false
-	}
-	command := fields[0]
-	if idx := strings.IndexByte(command, '@'); idx != -1 {
-		command = command[:idx]
-	}
-	if command != "/agent" && command != "/to" {
-		return false
-	}
-	return len(fields) < 3
+	return isIncompleteAgentCommand(text)
 }
 
 func (b *SlackBot) ack(req socketmode.Request, payload ...interface{}) {
@@ -978,15 +959,25 @@ func (b *SlackBot) toProtocolMessage(msg *slackInboundMessage, text, agent, trus
 		}
 	}
 
+	timestamp := strings.TrimSpace(msg.timestamp)
+	if timestamp == "" {
+		timestamp = time.Now().UTC().Format(time.RFC3339)
+	}
+	rawText := strings.TrimSpace(msg.rawText)
+	if rawText == "" {
+		rawText = msg.text
+	}
 	data := map[string]interface{}{
 		"channel":           "slack",
 		"text":              text,
+		"raw_text":          rawText,
 		"agent":             agent,
 		"user_id":           msg.userID,
 		"chat_id":           msg.channelID,
 		"conversation_type": convType,
 		"trust_level":       trustLevel,
 		"thread_ts":         msg.threadTS,
+		"timestamp":         timestamp,
 	}
 	if channelName != "" {
 		data["channel_name"] = channelName
@@ -1007,10 +998,12 @@ func (b *SlackBot) toProtocolMessage(msg *slackInboundMessage, text, agent, trus
 
 type slackInboundMessage struct {
 	text        string
+	rawText     string
 	userID      string
 	channelID   string
 	channelType string
 	threadTS    string
+	timestamp   string
 	attachments []protocol.Attachment
 }
 
@@ -1029,10 +1022,12 @@ func slackMessageFromEvent(event *slackevents.MessageEvent) *slackInboundMessage
 	}
 	return &slackInboundMessage{
 		text:        event.Text,
+		rawText:     event.Text,
 		userID:      event.User,
 		channelID:   event.Channel,
 		channelType: event.ChannelType,
 		threadTS:    event.ThreadTimeStamp,
+		timestamp:   event.TimeStamp,
 		attachments: slackAttachmentsFromEvent(event),
 	}
 }
@@ -1050,10 +1045,12 @@ func slackMessageFromAppMentionEvent(event *slackevents.AppMentionEvent) *slackI
 	}
 	return &slackInboundMessage{
 		text:        trimmed,
+		rawText:     event.Text,
 		userID:      event.User,
 		channelID:   event.Channel,
 		channelType: "app_mention",
 		threadTS:    event.ThreadTimeStamp,
+		timestamp:   event.TimeStamp,
 	}
 }
 

@@ -6,15 +6,16 @@ Generic Agent Router ingress currently accepts Telegram, Feishu/Lark, Slack, Dis
 
 ## Agent selection
 
-Send `/agent <name> <task>` (or `/to <name> <task>`) to select an allowed agent. Messages without an explicit selection use the active router's `defaultAgent`.
+Send `/agent <name> <task>` (or `/to <name> <task>`) to select an allowed agent. Use `/admin <text>` to send recovery or management text to the reserved `admin` agent. Messages without an explicit selection use the active router's `defaultAgent`.
 
-When `allowedAgents` is set, only listed names are accepted. `/agents` shows the available names. Routed envelopes include `channel`, `chat_id`, `user_id`, `username`, and `selected_agent` so the target can reply through the correct channel.
+When `allowedAgents` is set, only listed names are accepted, so add `admin` before enabling `/admin`. `/agents` shows the available names. Routed envelopes include the available source context (`channel`, chat/thread/user/message IDs, original text, and timestamp) plus `selected_agent` so the target can reply through the correct channel.
 
 Common commands:
 
 | Command | Purpose |
 | --- | --- |
 | `/agents` | List allowed agent names. |
+| `/admin <text>` | Route recovery or management text to the `admin` agent. |
 | `/monitor <name> [lines]` | Show recent oh-my-code agent output, capped at 200 lines. |
 | `/startagent <name>` | Start an oh-my-code agent; admin only. |
 | `/stopagent <name>` | Stop an oh-my-code agent; admin only. |
@@ -38,6 +39,7 @@ agents:
     defaultAgent: "qa-1"
     allowedAgents:
       - "qa-1"
+      - "admin"
       - "coder-a"
     assignTimeoutSeconds: 90
 ```

@@ -491,6 +491,7 @@ agents:
     defaultAgent: "dev"                      # 普通消息默认路由到此 Agent
     allowedAgents:                           # /agent 命令可选的 Agent 列表
       - "dev"
+      - "admin"
       - "qa"
     assignTimeoutSeconds: 90                 # Agent 响应超时（秒）
 ```
@@ -563,6 +564,7 @@ curl -s http://127.0.0.1:18789/status | python3 -m json.tool
 | `/ping` | 健康检查 | 所有人 |
 | `/agents` | 列出可用 Agent | 所有人 |
 | `/agent <name> <task>` | 指定 Agent 执行任务 | 所有人 |
+| `/admin <text>` | 将恢复/管理指令路由到 `admin` Agent | 所有人（仍受渠道 allowlist 限制） |
 | `/monitor <name> [lines]` | 查看 Agent 最近输出（最多 200 行） | 所有人 |
 | `/startagent <name>` | 启动指定 Agent | 仅 Admin |
 | `/stopagent <name>` | 停止指定 Agent | 仅 Admin |

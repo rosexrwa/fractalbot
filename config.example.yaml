@@ -146,9 +146,11 @@ agents:
     agentManagerScript: ".claude/skills/agent-manager/scripts/main.py"
     # Which agent receives Telegram messages by default
     defaultAgent: "qa-1"
-    # Optional allowlist for /agent routing (defaults to only defaultAgent)
+    # Optional allowlist for explicit routing (defaults to only defaultAgent).
+    # Include "admin" to enable /admin <text>.
     allowedAgents:
       - "qa-1"
+      - "admin"
       - "coder-a"
     # Inbound channel context (channel/chat_id/user_id/username + selected_agent) is
     # injected into assign prompts. For Telegram outbound intent, FractalBot instructs
