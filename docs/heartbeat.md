@@ -2,7 +2,7 @@
 
 FractalBot can wake supported Agent Runtimes on explicit-timezone cron schedules. A heartbeat asks an Agent to inspect and advance its work; it is not a runtime readiness probe and it is not a synthetic channel message.
 
-Supported targets are `ohMyCode`, `codexAppCDP`, and `claudeDesktop`. Each job selects its Runtime and Agent directly, independently of the inbound `agents.router` setting.
+Supported targets are `ohMyCode`, `codexAppCDP`, `claudeDesktop`, and `grokBotApp`. Each job selects its Runtime and Agent directly, independently of the inbound `agents.router` setting.
 
 ## Configuration
 

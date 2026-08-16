@@ -285,6 +285,39 @@ type ClaudeDesktopConfig struct {
 	DeliveryTimeoutSeconds int `yaml:"deliveryTimeoutSeconds,omitempty"`
 }
 
+// GrokBotAppConfig contains routing settings for Grok Bot.app delivery.
+// FractalBot does not launch, patch, or scrape Grok Bot. InboxPath is the
+// durable store; CDP and URL-scheme delivery are optional push adapters.
+type GrokBotAppConfig struct {
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// CDPEndpoint is an optional Chromium DevTools endpoint exposed by Grok Bot.
+	// Example: "http://127.0.0.1:9222".
+	CDPEndpoint string `yaml:"cdpEndpoint,omitempty"`
+
+	// TargetSelector optionally matches a Grok Bot page title or URL.
+	TargetSelector string `yaml:"targetSelector,omitempty"`
+
+	// URLScheme is an optional best-effort deep link such as "grokbot:" or "sand:".
+	// Opening the scheme is not proof that the prompt was injected.
+	URLScheme string `yaml:"urlScheme,omitempty"`
+
+	// InboxPath is the durable queue. Required when enabled.
+	InboxPath string `yaml:"inboxPath,omitempty"`
+
+	// FallbackToInbox queues to InboxPath when CDP or URL-scheme delivery fails.
+	FallbackToInbox bool `yaml:"fallbackToInbox,omitempty"`
+
+	// DefaultAgent is used when the inbound message omits /agent.
+	DefaultAgent string `yaml:"defaultAgent,omitempty"`
+
+	// AllowedAgents restricts which agents can be targeted by channel messages.
+	AllowedAgents []string `yaml:"allowedAgents,omitempty"`
+
+	// DeliveryTimeoutSeconds limits CDP and URL-scheme delivery. Defaults to 20 seconds.
+	DeliveryTimeoutSeconds int `yaml:"deliveryTimeoutSeconds,omitempty"`
+}
+
 // HeartbeatConfig schedules runtime-neutral agent wakeups.
 type HeartbeatConfig struct {
 	Enabled       bool                 `yaml:"enabled,omitempty"`
@@ -313,6 +346,7 @@ type AgentsConfig struct {
 	OhMyCode      *OhMyCodeConfig      `yaml:"ohMyCode,omitempty"`
 	CodexAppCDP   *CodexAppCDPConfig   `yaml:"codexAppCDP,omitempty"`
 	ClaudeDesktop *ClaudeDesktopConfig `yaml:"claudeDesktop,omitempty"`
+	GrokBotApp    *GrokBotAppConfig    `yaml:"grokBotApp,omitempty"`
 	Heartbeat     *HeartbeatConfig     `yaml:"heartbeat,omitempty"`
 }
 
@@ -405,6 +439,9 @@ func validateConfig(cfg *Config) error {
 	if err := validateClaudeDesktopConfig(cfg); err != nil {
 		return err
 	}
+	if err := validateGrokBotAppConfig(cfg); err != nil {
+		return err
+	}
 	if err := validateHeartbeatConfig(cfg); err != nil {
 		return err
 	}
@@ -416,7 +453,7 @@ func validateRouterConfig(cfg *Config) error {
 		return nil
 	}
 	router := strings.TrimSpace(cfg.Agents.Router)
-	if router == "" || router == "ohMyCode" || router == "codexAppCDP" || router == "claudeDesktop" {
+	if router == "" || router == "ohMyCode" || router == "codexAppCDP" || router == "claudeDesktop" || router == "grokBotApp" {
 		return nil
 	}
 	return fmt.Errorf("agents.router: unsupported router %q", router)
@@ -438,6 +475,32 @@ func validateClaudeDesktopConfig(cfg *Config) error {
 	}
 	if claude.DeliveryTimeoutSeconds < 0 {
 		return fmt.Errorf("agents.claudeDesktop.deliveryTimeoutSeconds: must be >= 0")
+	}
+	return nil
+}
+
+func validateGrokBotAppConfig(cfg *Config) error {
+	if cfg == nil || cfg.Agents == nil || cfg.Agents.GrokBotApp == nil {
+		return nil
+	}
+	grok := cfg.Agents.GrokBotApp
+	if err := validateRoutingAgents("agents.grokBotApp", grok.DefaultAgent, grok.AllowedAgents); err != nil {
+		return err
+	}
+	if scheme := strings.TrimSpace(grok.URLScheme); scheme != "" {
+		normalized := strings.ToLower(scheme)
+		if !strings.HasPrefix(normalized, "grokbot:") && !strings.HasPrefix(normalized, "sand:") {
+			return fmt.Errorf("agents.grokBotApp.urlScheme: must start with grokbot: or sand:")
+		}
+	}
+	if !grok.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(grok.InboxPath) == "" {
+		return fmt.Errorf("agents.grokBotApp.inboxPath: required when agents.grokBotApp.enabled is true")
+	}
+	if grok.DeliveryTimeoutSeconds < 0 {
+		return fmt.Errorf("agents.grokBotApp.deliveryTimeoutSeconds: must be >= 0")
 	}
 	return nil
 }
@@ -551,6 +614,11 @@ func validateHeartbeatRuntimeTarget(agents *AgentsConfig, runtimeName, agentName
 			return fmt.Errorf("claudeDesktop runtime is not enabled")
 		}
 		return validateHeartbeatAgentAllowed("agents.claudeDesktop", agentName, agents.ClaudeDesktop.DefaultAgent, agents.ClaudeDesktop.AllowedAgents)
+	case "grokBotApp":
+		if agents.GrokBotApp == nil || !agents.GrokBotApp.Enabled {
+			return fmt.Errorf("grokBotApp runtime is not enabled")
+		}
+		return validateHeartbeatAgentAllowed("agents.grokBotApp", agentName, agents.GrokBotApp.DefaultAgent, agents.GrokBotApp.AllowedAgents)
 	default:
 		return fmt.Errorf("unsupported runtime %q", runtimeName)
 	}

@@ -112,6 +112,46 @@ func TestDispatchRuntimeCoalescesClaudeDesktopHeartbeatInbox(t *testing.T) {
 	}
 }
 
+func TestDispatchRuntimeCoalescesGrokBotAppHeartbeatInbox(t *testing.T) {
+	inbox := filepath.Join(t.TempDir(), "grok-inbox")
+	manager := NewManager(&config.AgentsConfig{GrokBotApp: &config.GrokBotAppConfig{
+		Enabled:       true,
+		InboxPath:     inbox,
+		DefaultAgent:  "main",
+		AllowedAgents: []string{"main"},
+	}})
+
+	first := manager.DispatchRuntime(context.Background(), runtimeTestRequest(agentruntime.GrokBotApp, "run-1"))
+	secondRequest := runtimeTestRequest(agentruntime.GrokBotApp, "run-2")
+	secondRequest.Text = "newest instruction"
+	second := manager.DispatchRuntime(context.Background(), secondRequest)
+	if first.Status != "queued" || second.Status != "queued" || first.InboxPath != second.InboxPath {
+		t.Fatalf("heartbeat deliveries were not coalesced: first=%#v second=%#v", first, second)
+	}
+	entries, err := os.ReadDir(inbox)
+	if err != nil {
+		t.Fatalf("read inbox: %v", err)
+	}
+	if len(entries) != 1 || !strings.HasPrefix(entries[0].Name(), "heartbeat-") {
+		t.Fatalf("expected one stable heartbeat file, got %#v", entries)
+	}
+	data, err := os.ReadFile(second.InboxPath)
+	if err != nil {
+		t.Fatalf("read heartbeat envelope: %v", err)
+	}
+	var queued grokBotAppInboxEnvelope
+	if err := json.Unmarshal(data, &queued); err != nil {
+		t.Fatalf("decode heartbeat envelope: %v", err)
+	}
+	assertRuntimeEnvelope(t, queued.Envelope, "run-2", "newest instruction")
+	if !strings.Contains(queued.Prompt, "This is an autonomous wakeup, not a chat message") {
+		t.Fatalf("heartbeat prompt missing autonomous context: %q", queued.Prompt)
+	}
+	if strings.Contains(queued.Prompt, "channel:") || strings.Contains(queued.Prompt, "chat_id:") {
+		t.Fatalf("heartbeat prompt contains synthetic channel identity: %q", queued.Prompt)
+	}
+}
+
 func TestDispatchRuntimeRejectsInvalidTargetAndText(t *testing.T) {
 	manager := NewManager(&config.AgentsConfig{})
 	request := runtimeTestRequest("unknown", "run-1")

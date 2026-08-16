@@ -47,6 +47,8 @@ type Manager struct {
 	lastRouting         *RoutingOutcome
 	codexAppCDPClient   codexAppCDPClient
 	claudeDesktopClient claudeDesktopClient
+	grokBotAppClient    grokBotAppClient
+	grokBotAppOpener    grokBotAppOpener
 	cdpMonitorCancel    context.CancelFunc
 	cdpMonitorDone      chan struct{}
 	cdpReadiness        *CodexAppCDPReadinessStatus
@@ -201,6 +203,23 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return out, nil
 	}
 
+	if m.activeRouter() == "grokBotApp" && m.isGrokBotAppEnabled() {
+		agentName, _ := data["agent"].(string)
+		out, err := m.assignGrokBotApp(ctx, text, agentName, data)
+		if err != nil {
+			return "", err
+		}
+		m.notifyInboundRouted(agentruntime.GrokBotApp, agentName)
+		out = normalizeUserReply(out)
+		if out == "" {
+			return "", nil
+		}
+		if channel == "telegram" {
+			return channels.TruncateTelegramReply(out), nil
+		}
+		return out, nil
+	}
+
 	if m.isOhMyCodeEnabled() {
 		agentName, _ := data["agent"].(string)
 		out, err := m.assignOhMyCode(ctx, text, agentName, data)
@@ -245,6 +264,10 @@ func (m *Manager) notifyInboundRouted(runtimeName, agentName string) {
 			if m.config.ClaudeDesktop != nil {
 				agentName = strings.TrimSpace(m.config.ClaudeDesktop.DefaultAgent)
 			}
+		case agentruntime.GrokBotApp:
+			if m.config.GrokBotApp != nil {
+				agentName = strings.TrimSpace(m.config.GrokBotApp.DefaultAgent)
+			}
 		}
 	}
 	m.inboundHookMu.RLock()
@@ -271,6 +294,9 @@ func (m *Manager) activeRouter() string {
 	}
 	if m.config.ClaudeDesktop != nil && m.config.ClaudeDesktop.Enabled {
 		return "claudeDesktop"
+	}
+	if m.config.GrokBotApp != nil && m.config.GrokBotApp.Enabled {
+		return "grokBotApp"
 	}
 	return ""
 }

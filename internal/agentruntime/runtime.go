@@ -11,6 +11,7 @@ const (
 	OhMyCode      = "ohMyCode"
 	CodexAppCDP   = "codexAppCDP"
 	ClaudeDesktop = "claudeDesktop"
+	GrokBotApp    = "grokBotApp"
 )
 
 // DispatchRequest is an internal agent wakeup that is not associated with a

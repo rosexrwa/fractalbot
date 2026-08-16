@@ -26,6 +26,7 @@ FractalBot is a local-first Go messaging gateway that connects chat channels to 
 | `ohMyCode` | oh-my-code agent-manager | Invokes the manager script in an existing workspace. |
 | `codexAppCDP` | ChatGPT / Codex desktop app | Resolves a project session and calls the renderer's in-process app-server bridge through CDP. |
 | `claudeDesktop` | Claude Desktop | Submits to an authenticated Claude chat exposed through CDP. |
+| `grokBotApp` | Grok Bot.app | Optional Electron CDP or `grokbot:`/`sand:` open, with a required durable inbox fallback. |
 | Legacy fallback | Echo | Echoes supported inbound text when no Agent Router is enabled. |
 
 Desktop routes support durable file-backed inbox fallback when direct delivery is unavailable. Channel allowlists use deny-by-default behavior where supported.

@@ -1,6 +1,6 @@
 # Agent Routing
 
-FractalBot selects one inbound runtime with `agents.router`. Supported values are `ohMyCode`, `codexAppCDP`, and `claudeDesktop`. If `router` is empty, the first enabled runtime is selected in that order; if none is enabled, supported inbound messages use the legacy echo behavior.
+FractalBot selects one inbound runtime with `agents.router`. Supported values are `ohMyCode`, `codexAppCDP`, `claudeDesktop`, and `grokBotApp`. If `router` is empty, the first enabled runtime is selected in that order; if none is enabled, supported inbound messages use the legacy echo behavior.
 
 Generic Agent Router ingress currently accepts Telegram, Feishu/Lark, Slack, Discord, and iMessage. Demail transport can receive and send messages, but Demail messages do not yet enter these Agent Routers.
 
@@ -119,6 +119,30 @@ curl -fsS http://127.0.0.1:19334/json/list
 
 FractalBot does not launch Claude Desktop, patch the application, bypass its CDP authentication guard, scrape chat history, or inject input through AppleScript. If the target is unavailable, logged out, lacks a compose box, or rejects submission, a configured fallback inbox receives the normalized envelope and delivery prompt with private file permissions.
 
+## Grok Bot App
+
+The `grokBotApp` router delivers into the signed-in Grok Bot desktop app (`Grok Bot.app`, bundle `com.anysphere.sand`). Inbox fallback is required when the router is enabled. CDP is optional and only used when you expose a DevTools endpoint yourself. `urlScheme` (`grokbot:` or `sand:`) is a best-effort open and is not treated as proof that the prompt was injected.
+
+```yaml
+agents:
+  router: "grokBotApp"
+  grokBotApp:
+    enabled: true
+    cdpEndpoint: "http://127.0.0.1:9222"
+    targetSelector: "Grok Bot"
+    urlScheme: "grokbot:"
+    inboxPath: "/Users/you/.fractalbot/grok-bot-inbox"
+    fallbackToInbox: true
+    defaultAgent: "main"
+    allowedAgents:
+      - "main"
+    deliveryTimeoutSeconds: 20
+```
+
+Do not enable `grokBotApp` by default on hosts that already use `ohMyCode`. FractalBot does not scrape Grok Bot history, read undocumented app tokens, patch the signed app, or brand an xAI HTTP API as `grokBotApp`.
+
+If Grok Bot is running without CDP, inbound messages are queued to `inboxPath` with envelope-id / channel-chat-timestamp idempotency.
+
 ## Observability
 
 Use the status endpoint to inspect the selected router and most recent outcome:
@@ -127,6 +151,6 @@ Use the status endpoint to inspect the selected router and most recent outcome:
 curl -sS http://127.0.0.1:18789/status | python3 -m json.tool
 ```
 
-For desktop routes, `agents.last_routing` records the backend, status (`delivered`, `queued`, or `error`), selected agent, envelope ID, inbox path, and delivery error. The Codex App route also reports CDP readiness and the resolved project conversation.
+For desktop routes, `agents.last_routing` records the backend, status (`delivered`, `queued`, or `error`), selected agent, envelope ID, inbox path, and delivery error. The Codex App route also reports CDP readiness and the resolved project conversation. The Grok Bot App route additionally exposes `agents.grok_bot_app.inbox_path`, `last_routing`, and `last_error`.
 
 See [Troubleshooting](troubleshooting.md) for startup and delivery failures.

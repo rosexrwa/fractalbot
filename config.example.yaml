@@ -133,7 +133,7 @@ agents:
   maxConcurrent: 4
 
   # Select the inbound agent runtime. Empty preserves legacy auto-selection.
-  # Supported values: "ohMyCode", "codexAppCDP", "claudeDesktop".
+  # Supported values: "ohMyCode", "codexAppCDP", "claudeDesktop", "grokBotApp".
   router: "ohMyCode"
 
   # Optional: oh-my-code integration (legacy tmux/agent-manager route)
@@ -219,6 +219,21 @@ agents:
     # Optional title or URL match. Empty selects the first authenticated chat page.
     targetSelector: ""
     inboxPath: "/Users/you/.fractalbot/claude-desktop-inbox"
+    fallbackToInbox: true
+    defaultAgent: "main"
+    allowedAgents:
+      - "main"
+    deliveryTimeoutSeconds: 20
+
+  grokBotApp:
+    enabled: false
+    # Optional Electron CDP endpoint. Grok Bot does not expose this by default;
+    # enable remote debugging yourself rather than patching the app.
+    cdpEndpoint: "http://127.0.0.1:9222"
+    targetSelector: "Grok Bot"
+    # Optional best-effort deep link. Opening the scheme is not delivery proof.
+    urlScheme: "grokbot:"
+    inboxPath: "/Users/you/.fractalbot/grok-bot-inbox"
     fallbackToInbox: true
     defaultAgent: "main"
     allowedAgents:

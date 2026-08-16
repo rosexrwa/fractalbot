@@ -31,6 +31,8 @@ func (m *Manager) DispatchRuntime(ctx context.Context, request agentruntime.Disp
 		return m.dispatchCodexAppRuntime(ctx, request)
 	case agentruntime.ClaudeDesktop:
 		return m.dispatchClaudeDesktopRuntime(ctx, request)
+	case agentruntime.GrokBotApp:
+		return m.dispatchGrokBotAppRuntime(ctx, request)
 	default:
 		result.Status = "error"
 		result.Error = fmt.Sprintf("unsupported Agent Runtime %q", request.Runtime)
@@ -100,6 +102,27 @@ func (m *Manager) dispatchClaudeDesktopRuntime(ctx context.Context, request agen
 	result.Agent = name
 	envelope := buildRuntimeAppEnvelope(request, name)
 	delivery := m.deliverClaudeDesktopEnvelope(ctx, m.config.ClaudeDesktop, envelope, buildRuntimePrompt(request))
+	result.Status = delivery.Status
+	result.EnvelopeID = delivery.EnvelopeID
+	result.InboxPath = delivery.InboxPath
+	if delivery.Error != nil {
+		result.Error = delivery.Error.Error()
+	}
+	return result
+}
+
+func (m *Manager) dispatchGrokBotAppRuntime(ctx context.Context, request agentruntime.DispatchRequest) agentruntime.DispatchResult {
+	result := agentruntime.DispatchResult{Runtime: request.Runtime, Agent: request.Agent}
+	if m.config == nil || m.config.GrokBotApp == nil || !m.config.GrokBotApp.Enabled {
+		return runtimeDispatchError(result, errors.New("agents.grokBotApp is not enabled"))
+	}
+	name, err := m.validateGrokBotAppAgent(request.Agent)
+	if err != nil {
+		return runtimeDispatchError(result, err)
+	}
+	result.Agent = name
+	envelope := buildRuntimeAppEnvelope(request, name)
+	delivery := m.deliverGrokBotAppEnvelope(ctx, m.config.GrokBotApp, envelope, buildRuntimePrompt(request))
 	result.Status = delivery.Status
 	result.EnvelopeID = delivery.EnvelopeID
 	result.InboxPath = delivery.InboxPath
