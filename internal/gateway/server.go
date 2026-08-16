@@ -605,18 +605,18 @@ type codexAppCDPStatus struct {
 }
 
 type grokBotAppStatus struct {
-	Enabled          bool     `json:"enabled"`
-	CDPEndpoint      string   `json:"cdp_endpoint,omitempty"`
-	TargetSelector   string   `json:"target_selector,omitempty"`
-	URLScheme        string   `json:"url_scheme,omitempty"`
-	InboxConfigured  bool     `json:"inbox_configured"`
-	InboxPath        string   `json:"inbox_path,omitempty"`
-	FallbackToInbox  bool     `json:"fallback_to_inbox"`
-	DefaultAgent     string               `json:"default_agent,omitempty"`
-	AllowedAgents    []string             `json:"allowed_agents,omitempty"`
-	DeliveryTimeoutS int                  `json:"delivery_timeout_seconds,omitempty"`
-	LastRouting      *agentRoutingStatus  `json:"last_routing,omitempty"`
-	LastError        string               `json:"last_error,omitempty"`
+	Enabled          bool                `json:"enabled"`
+	CDPEndpoint      string              `json:"cdp_endpoint,omitempty"`
+	TargetSelector   string              `json:"target_selector,omitempty"`
+	URLScheme        string              `json:"url_scheme,omitempty"`
+	InboxConfigured  bool                `json:"inbox_configured"`
+	InboxPath        string              `json:"inbox_path,omitempty"`
+	FallbackToInbox  bool                `json:"fallback_to_inbox"`
+	DefaultAgent     string              `json:"default_agent,omitempty"`
+	AllowedAgents    []string            `json:"allowed_agents,omitempty"`
+	DeliveryTimeoutS int                 `json:"delivery_timeout_seconds,omitempty"`
+	LastRouting      *agentRoutingStatus `json:"last_routing,omitempty"`
+	LastError        string              `json:"last_error,omitempty"`
 }
 
 type claudeDesktopStatus struct {
