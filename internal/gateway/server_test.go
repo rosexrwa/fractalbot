@@ -125,9 +125,10 @@ type statusPayload struct {
 		LastActivity string `json:"last_activity"`
 	} `json:"channels"`
 	Agents *struct {
-		WorkspaceConfigured bool   `json:"workspace_configured"`
-		MaxConcurrent       int    `json:"max_concurrent"`
-		Router              string `json:"router"`
+		WorkspaceConfigured bool              `json:"workspace_configured"`
+		MaxConcurrent       int               `json:"max_concurrent"`
+		Router              string            `json:"router"`
+		AgentRouters        map[string]string `json:"agent_routers"`
 		OhMyCode            *struct {
 			Enabled             bool     `json:"enabled"`
 			WorkspaceConfigured bool     `json:"workspace_configured"`
@@ -468,6 +469,50 @@ func TestStatusIncludesGrokBotAppConfig(t *testing.T) {
 	}
 	if len(grok.AllowedAgents) != 1 || grok.AllowedAgents[0] != "main" {
 		t.Fatalf("unexpected allowed agents: %#v", grok.AllowedAgents)
+	}
+}
+
+func TestStatusIncludesAgentRouters(t *testing.T) {
+	cfg := &config.Config{
+		Gateway:  &config.GatewayConfig{Bind: "127.0.0.1", Port: 0},
+		Channels: &config.ChannelsConfig{},
+		Agents: &config.AgentsConfig{
+			Router:       "ohMyCode",
+			AgentRouters: map[string]string{"trader": "grokBotApp"},
+			OhMyCode: &config.OhMyCodeConfig{
+				Enabled:      true,
+				DefaultAgent: "main",
+			},
+			GrokBotApp: &config.GrokBotAppConfig{
+				Enabled:        true,
+				TargetSelector: "Trader Bot",
+				InboxPath:      "/tmp/grok-bot-inbox",
+				DefaultAgent:   "trader",
+				AllowedAgents:  []string{"trader"},
+			},
+		},
+	}
+	server, err := NewServer(cfg)
+	if err != nil {
+		t.Fatalf("NewServer failed: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/status", server.handleStatus)
+	ts := httptest.NewServer(mux)
+	defer ts.Close()
+	statusResp, err := fetchStatus(ts.URL + "/status")
+	if err != nil {
+		t.Fatalf("fetch status: %v", err)
+	}
+	if statusResp.Agents.Router != "ohMyCode" {
+		t.Fatalf("router=%q", statusResp.Agents.Router)
+	}
+	if statusResp.Agents.AgentRouters["trader"] != "grokBotApp" {
+		t.Fatalf("agent_routers=%v", statusResp.Agents.AgentRouters)
+	}
+	grok := statusResp.Agents.GrokBotApp
+	if grok == nil || !grok.Enabled || grok.TargetSelector != "Trader Bot" || grok.DefaultAgent != "trader" {
+		t.Fatalf("unexpected Grok Bot status: %#v", grok)
 	}
 }
 

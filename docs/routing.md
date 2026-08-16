@@ -143,6 +143,28 @@ Do not enable `grokBotApp` by default on hosts that already use `ohMyCode`. Frac
 
 If Grok Bot is running without CDP, inbound messages are queued to `inboxPath` with envelope-id / channel-chat-timestamp idempotency.
 
+## Per-agent routers
+
+`agents.agentRouters` maps one inbound agent name onto a runtime without changing the default `agents.router`. Channel allowlists include those mapped names, so `/agent trader` is accepted even when `ohMyCode.allowedAgents` does not list `trader`. If the mapped runtime is not enabled, delivery fails closed and does not fall through to oh-my-code tmux.
+
+```yaml
+agents:
+  router: "ohMyCode"
+  agentRouters:
+    trader: grokBotApp
+  grokBotApp:
+    enabled: true
+    targetSelector: "Trader Bot"
+    urlScheme: "grokbot:"
+    inboxPath: "/Users/you/.fractalbot/grok-bot-inbox"
+    fallbackToInbox: true
+    defaultAgent: "trader"
+    allowedAgents:
+      - "trader"
+```
+
+Do not point `grokBotApp.cdpEndpoint` at a Codex App CDP port. Grok Bot does not expose CDP by default.
+
 ## Observability
 
 Use the status endpoint to inspect the selected router and most recent outcome:

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -340,9 +341,12 @@ type HeartbeatJobConfig struct {
 
 // AgentsConfig contains gateway-side agent routing settings.
 type AgentsConfig struct {
-	Workspace     string               `yaml:"workspace"`
-	MaxConcurrent int                  `yaml:"maxConcurrent"`
-	Router        string               `yaml:"router,omitempty"`
+	Workspace     string `yaml:"workspace"`
+	MaxConcurrent int    `yaml:"maxConcurrent"`
+	Router        string `yaml:"router,omitempty"`
+	// AgentRouters maps an inbound agent name onto a runtime without changing
+	// the default agents.router. Example: trader: grokBotApp.
+	AgentRouters  map[string]string    `yaml:"agentRouters,omitempty"`
 	OhMyCode      *OhMyCodeConfig      `yaml:"ohMyCode,omitempty"`
 	CodexAppCDP   *CodexAppCDPConfig   `yaml:"codexAppCDP,omitempty"`
 	ClaudeDesktop *ClaudeDesktopConfig `yaml:"claudeDesktop,omitempty"`
@@ -430,6 +434,9 @@ func validateConfig(cfg *Config) error {
 	if err := validateRouterConfig(cfg); err != nil {
 		return err
 	}
+	if err := validateAgentRoutersConfig(cfg); err != nil {
+		return err
+	}
 	if err := validateOhMyCodeConfig(cfg); err != nil {
 		return err
 	}
@@ -453,10 +460,142 @@ func validateRouterConfig(cfg *Config) error {
 		return nil
 	}
 	router := strings.TrimSpace(cfg.Agents.Router)
-	if router == "" || router == "ohMyCode" || router == "codexAppCDP" || router == "claudeDesktop" || router == "grokBotApp" {
+	if isSupportedRouter(router) {
 		return nil
 	}
 	return fmt.Errorf("agents.router: unsupported router %q", router)
+}
+
+func isSupportedRouter(router string) bool {
+	router = strings.TrimSpace(router)
+	if router == "" {
+		return true
+	}
+	return isNamedRouter(router)
+}
+
+func isNamedRouter(router string) bool {
+	switch strings.TrimSpace(router) {
+	case "ohMyCode", "codexAppCDP", "claudeDesktop", "grokBotApp":
+		return true
+	default:
+		return false
+	}
+}
+
+// AgentRouterFor returns a per-agent runtime override. Empty means use agents.router.
+func (cfg *AgentsConfig) AgentRouterFor(agentName string) string {
+	if cfg == nil || len(cfg.AgentRouters) == 0 {
+		return ""
+	}
+	name := strings.TrimSpace(agentName)
+	if name == "" {
+		return ""
+	}
+	if router, ok := cfg.AgentRouters[name]; ok {
+		return strings.TrimSpace(router)
+	}
+	for raw, router := range cfg.AgentRouters {
+		if strings.TrimSpace(raw) == name {
+			return strings.TrimSpace(router)
+		}
+	}
+	return ""
+}
+
+// AgentRouterNames returns sorted inbound agent names that have a runtime override.
+func (cfg *AgentsConfig) AgentRouterNames() []string {
+	if cfg == nil || len(cfg.AgentRouters) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(cfg.AgentRouters))
+	seen := make(map[string]struct{}, len(cfg.AgentRouters))
+	for raw := range cfg.AgentRouters {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// CopyAgentRouters returns a trimmed copy of per-agent runtime overrides.
+func (cfg *AgentsConfig) CopyAgentRouters() map[string]string {
+	if cfg == nil || len(cfg.AgentRouters) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(cfg.AgentRouters))
+	for rawName, rawRouter := range cfg.AgentRouters {
+		name := strings.TrimSpace(rawName)
+		router := strings.TrimSpace(rawRouter)
+		if name == "" || router == "" {
+			continue
+		}
+		out[name] = router
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func validateAgentRoutersConfig(cfg *Config) error {
+	if cfg == nil || cfg.Agents == nil || len(cfg.Agents.AgentRouters) == 0 {
+		return nil
+	}
+	for rawName, rawRouter := range cfg.Agents.AgentRouters {
+		name := strings.TrimSpace(rawName)
+		router := strings.TrimSpace(rawRouter)
+		if name == "" {
+			return fmt.Errorf("agents.agentRouters: agent name is required")
+		}
+		if err := validateAgentName(name); err != nil {
+			return fmt.Errorf("agents.agentRouters[%s]: %w", name, err)
+		}
+		if router == "" {
+			return fmt.Errorf("agents.agentRouters.%s: router is required", name)
+		}
+		if !isNamedRouter(router) {
+			return fmt.Errorf("agents.agentRouters.%s: unsupported router %q", name, router)
+		}
+		switch router {
+		case "ohMyCode":
+			if cfg.Agents.OhMyCode == nil || !cfg.Agents.OhMyCode.Enabled {
+				return fmt.Errorf("agents.agentRouters.%s: ohMyCode runtime is not enabled", name)
+			}
+			if err := validateHeartbeatAgentAllowed("agents.ohMyCode", name, cfg.Agents.OhMyCode.DefaultAgent, cfg.Agents.OhMyCode.AllowedAgents); err != nil {
+				return fmt.Errorf("agents.agentRouters.%s: %w", name, err)
+			}
+		case "codexAppCDP":
+			if cfg.Agents.CodexAppCDP == nil || !cfg.Agents.CodexAppCDP.Enabled {
+				return fmt.Errorf("agents.agentRouters.%s: codexAppCDP runtime is not enabled", name)
+			}
+			if err := validateHeartbeatAgentAllowed("agents.codexAppCDP", name, cfg.Agents.CodexAppCDP.DefaultAgent, cfg.Agents.CodexAppCDP.AllowedAgents); err != nil {
+				return fmt.Errorf("agents.agentRouters.%s: %w", name, err)
+			}
+		case "claudeDesktop":
+			if cfg.Agents.ClaudeDesktop == nil || !cfg.Agents.ClaudeDesktop.Enabled {
+				return fmt.Errorf("agents.agentRouters.%s: claudeDesktop runtime is not enabled", name)
+			}
+			if err := validateHeartbeatAgentAllowed("agents.claudeDesktop", name, cfg.Agents.ClaudeDesktop.DefaultAgent, cfg.Agents.ClaudeDesktop.AllowedAgents); err != nil {
+				return fmt.Errorf("agents.agentRouters.%s: %w", name, err)
+			}
+		case "grokBotApp":
+			if cfg.Agents.GrokBotApp == nil || !cfg.Agents.GrokBotApp.Enabled {
+				return fmt.Errorf("agents.agentRouters.%s: grokBotApp runtime is not enabled", name)
+			}
+			if err := validateHeartbeatAgentAllowed("agents.grokBotApp", name, cfg.Agents.GrokBotApp.DefaultAgent, cfg.Agents.GrokBotApp.AllowedAgents); err != nil {
+				return fmt.Errorf("agents.agentRouters.%s: %w", name, err)
+			}
+		}
+	}
+	return nil
 }
 
 func validateClaudeDesktopConfig(cfg *Config) error {

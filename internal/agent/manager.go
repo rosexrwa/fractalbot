@@ -169,8 +169,17 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return gatewayToolCommandsUnavailableMessage, nil
 	}
 
-	if m.activeRouter() == "codexAppCDP" && m.isCodexAppCDPEnabled() {
-		agentName, _ := data["agent"].(string)
+	agentName, _ := data["agent"].(string)
+	router, mapped, err := m.resolveInboundRouter(agentName)
+	if err != nil {
+		out := fmt.Sprintf("❌ %v", err)
+		if channel == "telegram" {
+			return channels.TruncateTelegramReply(out), nil
+		}
+		return out, nil
+	}
+
+	if router == "codexAppCDP" && m.isCodexAppCDPEnabled() {
 		out, err := m.assignCodexAppCDP(ctx, text, agentName, data)
 		if err != nil {
 			return "", err
@@ -186,8 +195,7 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return out, nil
 	}
 
-	if m.activeRouter() == "claudeDesktop" && m.isClaudeDesktopEnabled() {
-		agentName, _ := data["agent"].(string)
+	if router == "claudeDesktop" && m.isClaudeDesktopEnabled() {
 		out, err := m.assignClaudeDesktop(ctx, text, agentName, data)
 		if err != nil {
 			return "", err
@@ -203,8 +211,7 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return out, nil
 	}
 
-	if m.activeRouter() == "grokBotApp" && m.isGrokBotAppEnabled() {
-		agentName, _ := data["agent"].(string)
+	if router == "grokBotApp" && m.isGrokBotAppEnabled() {
 		out, err := m.assignGrokBotApp(ctx, text, agentName, data)
 		if err != nil {
 			return "", err
@@ -220,8 +227,7 @@ func (m *Manager) HandleIncoming(ctx context.Context, msg *protocol.Message) (st
 		return out, nil
 	}
 
-	if m.isOhMyCodeEnabled() {
-		agentName, _ := data["agent"].(string)
+	if (!mapped || router == "ohMyCode") && m.isOhMyCodeEnabled() {
 		out, err := m.assignOhMyCode(ctx, text, agentName, data)
 		if err != nil {
 			return "", err
@@ -299,6 +305,33 @@ func (m *Manager) activeRouter() string {
 		return "grokBotApp"
 	}
 	return ""
+}
+
+func (m *Manager) resolveInboundRouter(agentName string) (string, bool, error) {
+	if m.config != nil {
+		if mapped := m.config.AgentRouterFor(agentName); mapped != "" {
+			if !m.runtimeEnabled(mapped) {
+				return "", true, fmt.Errorf("agents.agentRouters[%s]: runtime %q is not enabled", strings.TrimSpace(agentName), mapped)
+			}
+			return mapped, true, nil
+		}
+	}
+	return m.activeRouter(), false, nil
+}
+
+func (m *Manager) runtimeEnabled(router string) bool {
+	switch strings.TrimSpace(router) {
+	case "ohMyCode":
+		return m.isOhMyCodeEnabled()
+	case "codexAppCDP":
+		return m.isCodexAppCDPEnabled()
+	case "claudeDesktop":
+		return m.isClaudeDesktopEnabled()
+	case "grokBotApp":
+		return m.isGrokBotAppEnabled()
+	default:
+		return false
+	}
 }
 
 func isRuntimeToolInvocation(text string) bool {

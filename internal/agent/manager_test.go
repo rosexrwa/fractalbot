@@ -1181,6 +1181,168 @@ func TestHandleIncomingGrokBotAppDoesNotStealOhMyCode(t *testing.T) {
 	}
 }
 
+func TestHandleIncomingAgentRoutersSendsTraderToGrokBotApp(t *testing.T) {
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	workspace := t.TempDir()
+	scriptPath := filepath.Join(workspace, "should-not-run.py")
+	if err := os.WriteFile(scriptPath, []byte("import sys\nsys.exit(1)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(&config.AgentsConfig{
+		Router:       "ohMyCode",
+		AgentRouters: map[string]string{"trader": "grokBotApp"},
+		OhMyCode: &config.OhMyCodeConfig{
+			Enabled:            true,
+			Workspace:          workspace,
+			AgentManagerScript: scriptPath,
+			DefaultAgent:       "main",
+			AllowedAgents:      []string{"main"},
+		},
+		GrokBotApp: &config.GrokBotAppConfig{
+			Enabled:         true,
+			TargetSelector:  "Trader Bot",
+			InboxPath:       inbox,
+			FallbackToInbox: true,
+			DefaultAgent:    "trader",
+			AllowedAgents:   []string{"trader"},
+		},
+	})
+	reply, err := manager.HandleIncoming(context.Background(), &protocol.Message{Data: map[string]interface{}{
+		"channel": "slack",
+		"text":    "route trader",
+		"agent":   "trader",
+		"chat_id": "D0ACSGK4JE8",
+	}})
+	if err != nil {
+		t.Fatalf("HandleIncoming failed: %v", err)
+	}
+	if reply != grokBotAppAssignAckMessage {
+		t.Fatalf("reply=%q", reply)
+	}
+	entries, err := os.ReadDir(inbox)
+	if err != nil {
+		t.Fatalf("read inbox: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected one inbox envelope, got %d", len(entries))
+	}
+	data, err := os.ReadFile(filepath.Join(inbox, entries[0].Name()))
+	if err != nil {
+		t.Fatalf("read inbox: %v", err)
+	}
+	var queued grokBotAppInboxEnvelope
+	if err := json.Unmarshal(data, &queued); err != nil {
+		t.Fatalf("decode inbox envelope: %v", err)
+	}
+	if queued.Envelope.SelectedAgent != "trader" || queued.Envelope.Text != "route trader" {
+		t.Fatalf("unexpected envelope: %#v", queued.Envelope)
+	}
+	telemetry := manager.LastRoutingOutcome()
+	if telemetry == nil || telemetry.Backend != "grokBotApp" || telemetry.SelectedAgent != "trader" {
+		t.Fatalf("unexpected telemetry: %#v", telemetry)
+	}
+}
+
+func TestHandleIncomingAgentRoutersKeepsDefaultOnOhMyCode(t *testing.T) {
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	workspace := t.TempDir()
+	scriptPath := filepath.Join(workspace, "agent_manager_prompt_capture.py")
+	argsPath := filepath.Join(workspace, "args.log")
+	script := `import pathlib, sys
+base = pathlib.Path(sys.argv[0]).parent
+(base / "args.log").write_text(" ".join(sys.argv[1:]), encoding="utf-8")
+print("assign ok")
+`
+	if err := os.WriteFile(scriptPath, []byte(script), 0644); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(&config.AgentsConfig{
+		Router:       "ohMyCode",
+		AgentRouters: map[string]string{"trader": "grokBotApp"},
+		OhMyCode: &config.OhMyCodeConfig{
+			Enabled:            true,
+			Workspace:          workspace,
+			AgentManagerScript: scriptPath,
+			DefaultAgent:       "main",
+			AllowedAgents:      []string{"main"},
+		},
+		GrokBotApp: &config.GrokBotAppConfig{
+			Enabled:         true,
+			InboxPath:       inbox,
+			FallbackToInbox: true,
+			DefaultAgent:    "trader",
+			AllowedAgents:   []string{"trader"},
+		},
+	})
+	for _, agent := range []string{"", "main"} {
+		if _, err := os.ReadDir(inbox); err == nil {
+			_ = os.RemoveAll(inbox)
+		}
+		reply, err := manager.HandleIncoming(context.Background(), &protocol.Message{Data: map[string]interface{}{
+			"channel": "slack",
+			"text":    "stay on ohMyCode",
+			"agent":   agent,
+			"chat_id": "D0ACSGK4JE8",
+		}})
+		if err != nil {
+			t.Fatalf("agent=%q HandleIncoming failed: %v", agent, err)
+		}
+		if reply != ohMyCodeAssignAckMessage {
+			t.Fatalf("agent=%q reply=%q", agent, reply)
+		}
+		argsRaw, err := os.ReadFile(argsPath)
+		if err != nil {
+			t.Fatalf("read args: %v", err)
+		}
+		if string(argsRaw) != "assign main" {
+			t.Fatalf("agent=%q args=%q", agent, argsRaw)
+		}
+		if entries, err := os.ReadDir(inbox); err == nil && len(entries) != 0 {
+			t.Fatalf("agent=%q grok inbox should stay empty, got %d", agent, len(entries))
+		}
+	}
+}
+
+func TestHandleIncomingAgentRoutersFailsClosedWhenRuntimeDisabled(t *testing.T) {
+	inbox := filepath.Join(t.TempDir(), "inbox")
+	workspace := t.TempDir()
+	scriptPath := filepath.Join(workspace, "should-not-run.py")
+	if err := os.WriteFile(scriptPath, []byte("import sys\nsys.exit(1)\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewManager(&config.AgentsConfig{
+		Router:       "ohMyCode",
+		AgentRouters: map[string]string{"trader": "grokBotApp"},
+		OhMyCode: &config.OhMyCodeConfig{
+			Enabled:            true,
+			Workspace:          workspace,
+			AgentManagerScript: scriptPath,
+			DefaultAgent:       "main",
+			AllowedAgents:      []string{"main"},
+		},
+		GrokBotApp: &config.GrokBotAppConfig{
+			Enabled:       false,
+			InboxPath:     inbox,
+			DefaultAgent:  "trader",
+			AllowedAgents: []string{"trader"},
+		},
+	})
+	reply, err := manager.HandleIncoming(context.Background(), &protocol.Message{Data: map[string]interface{}{
+		"channel": "slack",
+		"text":    "should not steal ohMyCode",
+		"agent":   "trader",
+	}})
+	if err != nil {
+		t.Fatalf("HandleIncoming failed: %v", err)
+	}
+	if !strings.Contains(reply, "agents.agentRouters[trader]") || !strings.Contains(reply, "grokBotApp") {
+		t.Fatalf("expected fail-closed router error, got %q", reply)
+	}
+	if entries, err := os.ReadDir(inbox); err == nil && len(entries) != 0 {
+		t.Fatalf("inbox should stay empty, got %d", len(entries))
+	}
+}
+
 func TestHandleIncomingGrokBotAppURLSchemeStillQueuesInbox(t *testing.T) {
 	inbox := filepath.Join(t.TempDir(), "inbox")
 	var opened string

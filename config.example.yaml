@@ -136,6 +136,10 @@ agents:
   # Supported values: "ohMyCode", "codexAppCDP", "claudeDesktop", "grokBotApp".
   router: "ohMyCode"
 
+  # Optional per-agent overrides. Default traffic still uses agents.router.
+  # agentRouters:
+  #   trader: grokBotApp
+
   # Optional: oh-my-code integration (legacy tmux/agent-manager route)
   ohMyCode:
     # Set true for local demo (requires python3 + tmux + agent-manager in that workspace)

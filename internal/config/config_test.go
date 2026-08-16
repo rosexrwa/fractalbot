@@ -488,6 +488,89 @@ func TestLoadConfigRequiresGrokBotAppInboxWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestLoadConfigAcceptsPerAgentRouters(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := []byte(`agents:
+  router: ohMyCode
+  agentRouters:
+    trader: grokBotApp
+  ohMyCode:
+    enabled: true
+    workspace: /tmp/oh-my-code
+    defaultAgent: main
+    allowedAgents:
+      - main
+  grokBotApp:
+    enabled: true
+    inboxPath: /tmp/grok-bot-inbox
+    fallbackToInbox: true
+    targetSelector: "Trader Bot"
+    defaultAgent: trader
+    allowedAgents:
+      - trader
+`)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig failed: %v", err)
+	}
+	if cfg.Agents.Router != "ohMyCode" {
+		t.Fatalf("router=%q", cfg.Agents.Router)
+	}
+	if cfg.Agents.AgentRouterFor("trader") != "grokBotApp" {
+		t.Fatalf("agentRouters=%v", cfg.Agents.AgentRouters)
+	}
+	if cfg.Agents.GrokBotApp == nil || cfg.Agents.GrokBotApp.TargetSelector != "Trader Bot" {
+		t.Fatalf("unexpected grokBotApp: %#v", cfg.Agents.GrokBotApp)
+	}
+}
+
+func TestLoadConfigRejectsAgentRouterWhenRuntimeDisabled(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := []byte(`agents:
+  router: ohMyCode
+  agentRouters:
+    trader: grokBotApp
+  ohMyCode:
+    enabled: true
+    workspace: /tmp/oh-my-code
+    defaultAgent: main
+  grokBotApp:
+    enabled: false
+    inboxPath: /tmp/grok-bot-inbox
+    defaultAgent: trader
+    allowedAgents:
+      - trader
+`)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected agentRouters runtime error")
+	}
+	if !strings.Contains(err.Error(), "agents.agentRouters.trader") || !strings.Contains(err.Error(), "grokBotApp runtime is not enabled") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadConfigRejectsUnknownPerAgentRouter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := []byte("agents:\n  agentRouters:\n    trader: notARouter\n")
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected unsupported router error")
+	}
+	if !strings.Contains(err.Error(), "agents.agentRouters.trader") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadConfigRejectsInvalidGrokBotAppURLScheme(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	content := []byte("agents:\n  grokBotApp:\n    enabled: false\n    urlScheme: https://example.com\n    defaultAgent: main\n")

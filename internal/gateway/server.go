@@ -554,6 +554,7 @@ type agentStatus struct {
 	WorkspaceConfigured bool                 `json:"workspace_configured"`
 	MaxConcurrent       int                  `json:"max_concurrent,omitempty"`
 	Router              string               `json:"router,omitempty"`
+	AgentRouters        map[string]string    `json:"agent_routers,omitempty"`
 	LastRouting         *agentRoutingStatus  `json:"last_routing,omitempty"`
 	OhMyCode            *ohMyCodeStatus      `json:"oh_my_code,omitempty"`
 	CodexAppCDP         *codexAppCDPStatus   `json:"codex_app_cdp,omitempty"`
@@ -804,6 +805,7 @@ func (s *Server) agentStatus() *agentStatus {
 		WorkspaceConfigured: strings.TrimSpace(s.config.Agents.Workspace) != "",
 		MaxConcurrent:       s.config.Agents.MaxConcurrent,
 		Router:              activeAgentRouterName(s.config.Agents),
+		AgentRouters:        s.config.Agents.CopyAgentRouters(),
 	}
 	if s.agentManager != nil {
 		if routing := s.agentManager.LastRoutingOutcome(); routing != nil {
